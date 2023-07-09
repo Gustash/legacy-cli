@@ -1,19 +1,10 @@
 use super::API;
-use crate::{config::Config, models};
-use log::{error, info};
+use crate::{config::Config, models, LegacyError};
+use log::info;
 
 static TARGET: &str = "library";
 
-// FIXME: Better error handling
-
-#[derive(Debug)]
-pub enum LibraryError {
-    IO(std::io::Error),
-    Request(reqwest::Error),
-    StatusCode(reqwest::StatusCode),
-}
-
-pub async fn sync(api: &API, config: &Config, email: &String) -> Result<(), LibraryError> {
+pub async fn sync(api: &API, config: &Config, email: &String) -> Result<(), LegacyError> {
     info!(target: TARGET, "Syncing library");
 
     match api
@@ -23,40 +14,29 @@ pub async fn sync(api: &API, config: &Config, email: &String) -> Result<(), Libr
         .await
     {
         Ok(res) => handle_sync_reponse(res, config).await,
-        Err(err) => {
-            error!(target: TARGET, "Failed to fetch library: {}", err);
-            Err(LibraryError::Request(err))
-        }
+        Err(err) => Err(LegacyError::Reqwest(TARGET, err)),
     }
 }
 
-async fn handle_sync_reponse(res: reqwest::Response, config: &Config) -> Result<(), LibraryError> {
-    match res.status() {
-        reqwest::StatusCode::OK => match res.json::<models::catalog::Response>().await {
-            Ok(response) => {
-                if response.status != "ok" {
-                    // TODO: Handle error
-                    return Ok(());
-                }
-                match config.save_library(
-                    response
-                        .data
-                        .iter()
-                        .flat_map(|x| &x.games)
-                        .collect::<Vec<_>>(),
-                ) {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err(LibraryError::IO(err)),
-                }
+async fn handle_sync_reponse(res: reqwest::Response, config: &Config) -> Result<(), LegacyError> {
+    if res.status() != reqwest::StatusCode::OK {
+        return Err(LegacyError::StatusCode(TARGET, res.status()));
+    }
+
+    match res.json::<models::catalog::Response>().await {
+        Ok(response) => {
+            if response.status != "ok" {
+                // TODO: Handle error
+                return Ok(());
             }
-            Err(err) => {
-                error!(target: TARGET, "Failed to parse API response");
-                Err(LibraryError::Request(err))
-            }
-        },
-        code => {
-            error!(target: TARGET, "Failed to fetch library: {:?}", code);
-            Err(LibraryError::StatusCode(code))
+            config.save_library(
+                response
+                    .data
+                    .iter()
+                    .flat_map(|x| &x.games)
+                    .collect::<Vec<_>>(),
+            )
         }
+        Err(err) => Err(LegacyError::Reqwest(TARGET, err)),
     }
 }
