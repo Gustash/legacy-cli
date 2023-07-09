@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
@@ -7,6 +8,10 @@ pub struct Cli {
     /// Enable debug logging
     #[arg(short, long)]
     pub debug: bool,
+
+    /// Custom config directory
+    #[arg(short, long)]
+    pub config_path: Option<PathBuf>,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -33,6 +38,10 @@ pub enum Commands {
         /// List games in library
         #[arg(short, long)]
         list: bool,
+
+        /// Account email
+        #[arg(short, long)]
+        email: String,
     },
 
     /// Install a game in the library
